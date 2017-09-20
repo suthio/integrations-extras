@@ -22,6 +22,11 @@ instances:
     # - migrate-rx-partitions-remaining
     # - migrate-tx-partitions-initial
     # - migrate-tx-partitions-remaining
+    # sets:
+    # - test/test_set
+    # set_metrics:
+    # - objects
+    # - truncate_lut
 
     # tags:
     # - optional_tag1

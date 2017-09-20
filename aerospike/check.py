@@ -16,6 +16,7 @@ SERVICE_CHECK_NAME = '%s.cluster_up' % SOURCE_TYPE_NAME
 CLUSTER_EVENT_TYPE = SOURCE_TYPE_NAME
 NAMESPACE_EVENT_TYPE = '%s.namespace' % SOURCE_TYPE_NAME
 NAMESPACE_TPS_EVENT_TYPE = '%s.namespace.tps' % SOURCE_TYPE_NAME
+SET_EVENT_TYPE = '%s.set' % SOURCE_TYPE_NAME
 SINDEX_EVENT_TYPE = '%s.sindex' % SOURCE_TYPE_NAME
 
 Addr = namedtuple('Addr', ['host', 'port'])
@@ -39,7 +40,7 @@ class AerospikeCheck(AgentCheck):
         self.connections = {}
 
     def check(self, instance):
-        addr, metrics, namespace_metrics, required_namespaces, tags = \
+        addr, metrics, namespace_metrics, required_namespaces, set_metircs, required_sets, tags = \
             self._get_config(instance)
 
         try:
@@ -54,6 +55,10 @@ class AerospikeCheck(AgentCheck):
                 for ns in namespaces:
                     conn.send('namespace/%s\r' % ns)
                     self._process_data(fp, NAMESPACE_EVENT_TYPE, namespace_metrics, tags+['namespace:%s' % ns])
+
+                    for s in required_sets:
+                        conn.send('sets/%s\r' % s)
+                        self._process_data(fp, SET_EVENT_TYPE, set_metircs, tags+['namespace/sets:%s' % s], ':')
 
                     conn.send('sindex/%s\r' % ns)
                     for idx in parse_sindex_namespace(fp.readline().split(';')[:-1], ns):
@@ -77,9 +82,11 @@ class AerospikeCheck(AgentCheck):
         metrics = set(instance.get('metrics', []))
         namespace_metrics = set(instance.get('namespace_metrics', []))
         required_namespaces = instance.get('namespaces', None)
+        set_metrics = set(instance.get('set_metrics', []))
+        required_sets = instance.get('sets',None)
         tags = instance.get('tags', [])
 
-        return (Addr(host,port), metrics, namespace_metrics, required_namespaces, tags)
+        return (Addr(host,port), metrics, namespace_metrics, required_namespaces, set_metrics, required_sets, tags)
 
     def _get_namespaces(self, conn, fp, required_namespaces=[]):
         conn.send('namespaces\r')
@@ -88,6 +95,14 @@ class AerospikeCheck(AgentCheck):
             return [v for v in namespaces if v in required_namespaces]
         else:
             return namespaces
+
+    def _get_sets(self, conn, fp, namespace, required_sets=[]):
+        conn.send('sets/%s\r' % namespace)
+        sets = fp.readline().rstrip().split(';')
+        if required_sets:
+            return [v for v in sets if v in required_sets]
+        else:
+            return sets
 
     def _get_connection(self, addr):
         conn = self.connections.get(addr, None)
@@ -124,8 +139,8 @@ class AerospikeCheck(AgentCheck):
 
             self._send(event_type, key, val, tags + ['namespace:%s' % ns] )
 
-    def _process_data(self, fp, event_type, required_keys=[], tags={}):
-        d = dict(x.split('=', 1) for x in fp.readline().rstrip().split(';'))
+    def _process_data(self, fp, event_type, required_keys=[], tags={}, split_string=";"):
+        d = dict(x.split('=', 1) for x in fp.readline().rstrip().split(split_string))
         if required_keys:
             required_data = {k: d[k] for k in required_keys if k in d}
         else:
